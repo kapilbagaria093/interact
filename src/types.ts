@@ -55,7 +55,8 @@ export interface Issue {
 }
 
 export interface User {
-  id: string;
+  id: number;
+  uid: string;
   name: string;
   avatar: string;
   points: number;
@@ -64,6 +65,7 @@ export interface User {
   reportedCount: number;
   verifiedCount: number;
   resolvedCount: number;
+  fundingTotal?: number;
   joinedAt: string;
   contributions: { [dateStr: string]: number }; // date string "YYYY-MM-DD" -> count (for github-like grid)
 }

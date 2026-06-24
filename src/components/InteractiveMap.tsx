@@ -27,6 +27,17 @@ export default function InteractiveMap({
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const clickMarkerRef = useRef<L.Marker | null>(null);
 
+  const onMapClickRef = useRef(onMapClick);
+  const onSelectIssueRef = useRef(onSelectIssue);
+
+  useEffect(() => {
+    onMapClickRef.current = onMapClick;
+  }, [onMapClick]);
+
+  useEffect(() => {
+    onSelectIssueRef.current = onSelectIssue;
+  }, [onSelectIssue]);
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -58,7 +69,11 @@ export default function InteractiveMap({
 
       // Add temporary marker at click location
       if (clickMarkerRef.current) {
-        clickMarkerRef.current.remove();
+        try {
+          clickMarkerRef.current.remove();
+        } catch (err) {
+          console.warn('Failed to remove click marker:', err);
+        }
       }
 
       const tempIcon = L.divIcon({
@@ -94,16 +109,37 @@ export default function InteractiveMap({
         console.error('Reverse geocode failed:', err);
       }
 
-      onMapClick(lat, lng, address);
+      onMapClickRef.current(lat, lng, address);
     });
 
     return () => {
       if (mapRef.current) {
-        mapRef.current.remove();
+        if (clickMarkerRef.current) {
+          try {
+            clickMarkerRef.current.remove();
+          } catch (e) {
+            console.warn(e);
+          }
+          clickMarkerRef.current = null;
+        }
+        if (markersLayerRef.current) {
+          try {
+            markersLayerRef.current.clearLayers();
+            markersLayerRef.current.remove();
+          } catch (e) {
+            console.warn(e);
+          }
+          markersLayerRef.current = null;
+        }
+        try {
+          mapRef.current.remove();
+        } catch (e) {
+          console.warn(e);
+        }
         mapRef.current = null;
       }
     };
-  }, [onMapClick]);
+  }, []);
 
   // Update Markers when Issues list changes
   useEffect(() => {
@@ -111,7 +147,11 @@ export default function InteractiveMap({
     const markersLayer = markersLayerRef.current;
     if (!map || !markersLayer) return;
 
-    markersLayer.clearLayers();
+    try {
+      markersLayer.clearLayers();
+    } catch (e) {
+      console.warn('Failed to clear layers:', e);
+    }
 
     issues.forEach((issue) => {
       let iconHtml = '';
@@ -154,16 +194,20 @@ export default function InteractiveMap({
 
       const marker = L.marker([issue.latitude, issue.longitude], { icon })
         .on('click', () => {
-          onSelectIssue(issue);
+          onSelectIssueRef.current(issue);
           if (clickMarkerRef.current) {
-            clickMarkerRef.current.remove();
+            try {
+              clickMarkerRef.current.remove();
+            } catch (e) {
+              console.warn(e);
+            }
             clickMarkerRef.current = null;
           }
         });
 
       markersLayer.addLayer(marker);
     });
-  }, [issues, onSelectIssue]);
+  }, [issues]);
 
   // Center Map on Selected Issue
   useEffect(() => {

@@ -9,6 +9,7 @@ import {
 } from "../../src/db/issues.ts";
 import { analyzeImageAndDescription } from "../analyzer.ts";
 import { broadcast } from "../ws.ts";
+import { requireAuth, AuthRequest } from "../../src/middleware/auth.ts";
 
 const router = Router();
 
@@ -141,16 +142,17 @@ router.post("/:id/volunteer", async (req, res) => {
 });
 
 // Contribute crowdfunding
-router.post("/:id/fund", async (req, res) => {
+router.post("/:id/fund", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
   const { amount } = req.body;
+  const { uid } = req.user!;
 
   if (!amount || isNaN(Number(amount))) {
     return res.status(400).json({ error: "Invalid amount" });
   }
 
   try {
-    const updated = await fundIssue(Number(id), Number(amount));
+    const updated = await fundIssue(Number(id), Number(amount), uid);
     broadcast("issue_updated", updated);
     res.json({ message: "Contribution successful", fundingCurrent: updated.fundingCurrent });
   } catch (error: any) {

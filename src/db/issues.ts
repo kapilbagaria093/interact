@@ -1,6 +1,13 @@
 import { db } from "./index.ts";
-import { issues, verifications, users } from "./schema.ts";
+import { issues, verifications, users, userMissions, userFundings } from "./schema.ts";
 import { eq, and, desc, count, sql } from "drizzle-orm";
+
+const MISSION_POINTS_MAP: Record<string, number> = {
+  'm-1': 100,
+  'm-2': 150,
+  'm-3': 250,
+  'm-4': 500,
+};
 
 // 2-Layer Error Helper
 function handleDbError(operationName: string, error: any) {
@@ -32,8 +39,27 @@ export async function recalculateUserStats(uid: string) {
       .where(eq(verifications.userId, uid));
     const verifiedCount = verifiesRes[0]?.val || 0;
 
-    // 2. Points formula: Report = 10pts, Verify = 5pts, Resolve = 50pts
-    const points = reportedCount * 10 + verifiedCount * 5 + resolvedCount * 50;
+    // Fetch user row to get current funding_total
+    const userRow = await db
+      .select({ fundingTotal: users.fundingTotal })
+      .from(users)
+      .where(eq(users.uid, uid))
+      .then((r) => r[0]);
+    const fundingTotal = userRow?.fundingTotal || 0;
+
+    // Fetch completed missions to add their points
+    const completedMissions = await db
+      .select()
+      .from(userMissions)
+      .where(and(eq(userMissions.userId, uid), eq(userMissions.status, "completed")));
+
+    let missionPointsSum = 0;
+    completedMissions.forEach((cm) => {
+      missionPointsSum += MISSION_POINTS_MAP[cm.missionId] || 0;
+    });
+
+    // 2. Points formula: Report = 10pts, Verify = 5pts, Resolve = 50pts + Mission Points + Funding (1 XP per $1 funded)
+    const points = reportedCount * 10 + verifiedCount * 5 + resolvedCount * 50 + missionPointsSum + fundingTotal * 1;
     const level = Math.floor(points / 100) + 1;
     const impactScore = Math.round(points * 0.35 + resolvedCount * 25);
 
@@ -408,7 +434,7 @@ export async function volunteerForIssue(issueId: number) {
 }
 
 // Support Crowdfunding contribution
-export async function fundIssue(issueId: number, amount: number) {
+export async function fundIssue(issueId: number, amount: number, uid?: string) {
   try {
     const issue = await db
       .select()
@@ -429,6 +455,41 @@ export async function fundIssue(issueId: number, amount: number) {
       })
       .where(eq(issues.id, issueId))
       .returning();
+
+    if (uid) {
+      // 1. Log transaction in userFundings table
+      await db.insert(userFundings).values({
+        userId: uid,
+        issueId,
+        amount,
+      });
+
+      // 2. Fetch user
+      const user = await db
+        .select()
+        .from(users)
+        .where(eq(users.uid, uid))
+        .then((r) => r[0]);
+
+      if (user) {
+        // 3. Update contributions heatmap grid
+        const dateStr = new Date().toISOString().split("T")[0];
+        const contributions = { ...(user.contributions as Record<string, number>) };
+        contributions[dateStr] = (contributions[dateStr] || 0) + 1;
+
+        // 4. Update fundingTotal in users table
+        await db
+          .update(users)
+          .set({
+            fundingTotal: user.fundingTotal + amount,
+            contributions,
+          })
+          .where(eq(users.uid, uid));
+
+        // 5. Recalculate stats which now factors in new fundingTotal
+        await recalculateUserStats(uid);
+      }
+    }
 
     return updated;
   } catch (error) {

@@ -8,8 +8,9 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
-import { recalculateScoresAndStats } from "./server/db";
-import { registerRoutes } from "./server/routes";
+import { registerRoutes } from "./server/routes.ts";
+import { initWebSocketServer } from "./server/ws.ts";
+import { seedDatabase } from "./src/db/seed.ts";
 
 dotenv.config();
 
@@ -20,9 +21,6 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Recalculate once on start to ensure up-to-date data structures
-recalculateScoresAndStats();
-
 // Register all modular application endpoints
 registerRoutes(app);
 
@@ -31,6 +29,13 @@ registerRoutes(app);
 // ----------------------------------------------------
 
 async function startServer() {
+  // Seed the Postgres database on startup if empty
+  try {
+    await seedDatabase();
+  } catch (error) {
+    console.error("Failed to seed database during startup:", error);
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -45,9 +50,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Attach WebSocket server intelligently
+  initWebSocketServer(server);
 }
 
 startServer();

@@ -14,6 +14,7 @@ export const users = pgTable("users", {
   reportedCount: integer("reported_count").default(0).notNull(),
   verifiedCount: integer("verified_count").default(0).notNull(),
   resolvedCount: integer("resolved_count").default(0).notNull(),
+  fundingTotal: integer("funding_total").default(0).notNull(), // Total USD funded
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
   contributions: jsonb("contributions").default({}).notNull(), // Stores date-string keys mapping to contribution counts: { "YYYY-MM-DD": number }
 });
@@ -94,3 +95,45 @@ export const verificationsRelations = relations(verifications, ({ one }) => ({
     references: [users.uid],
   }),
 }));
+
+// Define the 'user_missions' table to persist mission states
+export const userMissions = pgTable("user_missions", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id")
+    .references(() => users.uid, { onDelete: "cascade" })
+    .notNull(),
+  missionId: text("mission_id").notNull(), // 'm-1', 'm-2', etc.
+  status: text("status").notNull(), // 'active' | 'completed'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const userMissionsRelations = relations(userMissions, ({ one }) => ({
+  user: one(users, {
+    fields: [userMissions.userId],
+    references: [users.uid],
+  }),
+}));
+
+export const userFundings = pgTable("user_fundings", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id")
+    .references(() => users.uid, { onDelete: "cascade" })
+    .notNull(),
+  issueId: integer("issue_id")
+    .references(() => issues.id, { onDelete: "cascade" })
+    .notNull(),
+  amount: integer("amount").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const userFundingsRelations = relations(userFundings, ({ one }) => ({
+  user: one(users, {
+    fields: [userFundings.userId],
+    references: [users.uid],
+  }),
+  issue: one(issues, {
+    fields: [userFundings.issueId],
+    references: [issues.id],
+  }),
+}));
+

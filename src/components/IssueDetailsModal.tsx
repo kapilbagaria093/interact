@@ -53,7 +53,7 @@ export default function IssueDetailsModal({
   const [resolveLoading, setResolveLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const hasAlreadyVerified = issue.verifications.some((v) => v.userId === currentUser.id);
+  const hasAlreadyVerified = issue.verifications.some((v) => v.userId === currentUser.uid);
 
   const handleVerification = async (type: 'Confirm' | 'Reject' | 'Fixed') => {
     setVerifyLoading(true);

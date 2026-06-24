@@ -7,6 +7,7 @@ import { Express } from "express";
 import authRouter from "./routes/auth.ts";
 import issuesRouter from "./routes/issues.ts";
 import usersRouter from "./routes/users.ts";
+import missionsRouter from "./routes/missions.ts";
 import { getLeaderboardData, getCommunityStats } from "../src/db/issues.ts";
 
 export function registerRoutes(app: Express) {
@@ -14,6 +15,7 @@ export function registerRoutes(app: Express) {
   app.use("/api/auth", authRouter);
   app.use("/api/issues", issuesRouter);
   app.use("/api/users", usersRouter);
+  app.use("/api/missions", missionsRouter);
 
   // Legacy direct-mapped routes for seamless frontend compatibility
   app.post("/api/analyze", async (req, res) => {

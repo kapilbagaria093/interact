@@ -22,6 +22,10 @@ import {
   Target
 } from 'lucide-react';
 
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './lib/firebase.ts';
+import AuthScreen from './components/AuthScreen.tsx';
+
 import { Issue, User, IssueCategory, IssueSeverity, IssueStatus } from './types';
 import InteractiveMap from './components/InteractiveMap';
 import IssueDetailsModal from './components/IssueDetailsModal';
@@ -101,7 +105,10 @@ export default function App() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeUserId, setActiveUserId] = useState<string>('current-user');
+  
+  // Auth State
+  const [token, setToken] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   
   // UI Layout State
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
@@ -125,6 +132,28 @@ export default function App() {
 
   const activeTheme = BRUTAL_THEMES.find(t => t.id === selectedThemeId) || BRUTAL_THEMES[0];
 
+  // Auth Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setAuthLoading(true);
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          setToken(idToken);
+        } catch (err) {
+          console.error('Error fetching Firebase ID token:', err);
+          setToken(null);
+        }
+      } else {
+        setToken(null);
+        setCurrentUser(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Load Data
   const loadData = async () => {
     try {
@@ -143,20 +172,46 @@ export default function App() {
       if (usersRes.ok) {
         const usersData = await usersRes.json();
         setUsers(usersData);
-        
-        const active = usersData.find((u: User) => u.id === activeUserId);
-        if (active) setCurrentUser(active);
+      }
+
+      // Fetch user profile from database
+      if (token) {
+        const meRes = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          setCurrentUser(meData);
+        }
       }
     } catch (err) {
       console.error('Error loading data:', err);
     } finally {
       setLoading(false);
+      setAuthLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
-  }, [activeUserId]);
+  }, [token]);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      showNotification('Successfully logged out of Civic Ledger.');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleProfileUpdate = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+    showNotification('Profile forged and synced on ledger!');
+    loadData();
+  };
 
   const showNotification = (message: string, type: 'success' | 'info' = 'success') => {
     setNotification({ message, type });
@@ -177,10 +232,13 @@ export default function App() {
     try {
       const response = await fetch('/api/issues', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify({
           ...report,
-          reporterId: currentUser?.id,
+          reporterId: currentUser?.uid,
           reporterName: currentUser?.name,
           reporterAvatar: currentUser?.avatar,
         }),
@@ -204,9 +262,12 @@ export default function App() {
     try {
       const response = await fetch(`/api/issues/${selectedIssue.id}/verify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify({
-          userId: currentUser.id,
+          userId: currentUser.uid,
           userName: currentUser.name,
           type,
         }),
@@ -230,9 +291,12 @@ export default function App() {
     try {
       const response = await fetch(`/api/issues/${selectedIssue.id}/resolve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify({
-          resolverId: currentUser.id,
+          resolverId: currentUser.uid,
           resolverName: currentUser.name,
           afterImage: proof.afterImage,
           afterDescription: proof.afterDescription,
@@ -256,7 +320,10 @@ export default function App() {
     try {
       const response = await fetch(`/api/issues/${selectedIssue.id}/fund`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: JSON.stringify({ amount }),
       });
 
@@ -275,8 +342,11 @@ export default function App() {
     try {
       const response = await fetch(`/api/issues/${selectedIssue.id}/volunteer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser?.id }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: JSON.stringify({ userId: currentUser?.uid }),
       });
 
       if (response.ok) {
@@ -303,6 +373,21 @@ export default function App() {
 
   const unresolvedIssuesCount = issues.filter(i => i.status !== 'Resolved').length;
   const resolvedIssuesCount = issues.filter(i => i.status === 'Resolved').length;
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen bg-[#ffff25] flex flex-col items-center justify-center text-black font-sans p-4">
+        <div className="flex flex-col items-center justify-center gap-4 bg-white border-[4px] border-black p-8 rounded-[32px] shadow-[8px_8px_0px_rgba(0,0,0,1)] text-center max-w-sm">
+          <RefreshCcw className="w-12 h-12 animate-spin text-[#ff007f]" />
+          <span className="text-sm font-black uppercase font-mono tracking-wider">Decrypting Civic Ledger...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!token) {
+    return <AuthScreen onAuthSuccess={(t) => setToken(t)} />;
+  }
 
   return (
     <div className={`flex flex-col h-screen w-screen ${activeTheme.bgClass} overflow-hidden font-sans p-2 sm:p-3 md:p-4 transition-colors duration-500`}>
@@ -346,33 +431,28 @@ export default function App() {
         {/* Session Roleplay Selector and Toggle Menu */}
         <div className="flex items-center gap-2">
           {currentUser && (
-            <div className="flex items-center gap-2 bg-[#f0f0f0] border-2 border-black rounded-xl px-2 py-1 text-xs shrink-0 max-w-[170px] sm:max-w-none">
+            <button
+              onClick={() => {
+                setActiveTab('profile');
+                setSidebarCollapsed(false);
+              }}
+              className="flex items-center gap-2 bg-black text-[#ffff25] border-2 border-black rounded-xl px-3 py-1.5 text-xs shrink-0 font-black hover:bg-[#ff007f] hover:text-white transition-all shadow-[2px_2px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none cursor-pointer"
+            >
               <img
                 src={currentUser.avatar}
                 alt={currentUser.name}
-                className="w-5 h-5 rounded-md border border-black object-cover"
+                className="w-5 h-5 rounded-md border border-white object-cover"
               />
-              <select
-                value={activeUserId}
-                onChange={(e) => {
-                  setActiveUserId(e.target.value);
-                  showNotification(`Switched role to ${users.find(u => u.id === e.target.value)?.name}`);
-                }}
-                className="bg-transparent text-xs font-black text-black border-none focus:outline-none focus:ring-0 cursor-pointer max-w-[90px] sm:max-w-[120px] truncate"
-              >
-                {users.map((user) => (
-                  <option key={user.id} value={user.id} className="text-black font-semibold bg-white">
-                    {user.name} (Lvl {user.level})
-                  </option>
-                ))}
-              </select>
-            </div>
+              <span className="max-w-[80px] sm:max-w-[120px] truncate uppercase font-bold">
+                {currentUser.name} (Lvl {currentUser.level})
+              </span>
+            </button>
           )}
 
           {/* Collapsible Panel Toggle Button */}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="bg-[#00ffcc] hover:bg-[#00e6b8] text-black border-2 border-black font-black text-xs px-2.5 py-1.5 rounded-xl shadow-[3px_3px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all flex items-center gap-1.5"
+            className="bg-[#00ffcc] hover:bg-[#00e6b8] text-black border-2 border-black font-black text-xs px-2.5 py-1.5 rounded-xl shadow-[3px_3px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all flex items-center gap-1.5 cursor-pointer"
             title="Toggle Dashboard Sidebar"
           >
             <span>{sidebarCollapsed ? '📂 SHOW LIST' : '🗺️ COMPACT'}</span>
@@ -634,14 +714,19 @@ export default function App() {
                   {/* === TAB 4: ACTIVE MISSION QUESTS === */}
                   {activeTab === 'missions' && (
                     <div className="flex-1 p-4 h-full overflow-y-auto no-scrollbar">
-                      <Placeholders />
+                      <Placeholders token={token} onMissionAction={loadData} />
                     </div>
                   )}
 
                   {/* === TAB 5: ACTIVE PROFILE SUMMARY === */}
                   {activeTab === 'profile' && currentUser && (
                     <div className="flex-1 p-4 h-full overflow-y-auto no-scrollbar">
-                      <ProfileView user={currentUser} />
+                      <ProfileView 
+                        user={currentUser} 
+                        token={token} 
+                        onSignOut={handleSignOut} 
+                        onProfileUpdate={handleProfileUpdate} 
+                      />
                     </div>
                   )}
 

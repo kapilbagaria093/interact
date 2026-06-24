@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { requireAuth, AuthRequest } from "../../src/middleware/auth.ts";
 import { getOrCreateUser, getUserProfile } from "../../src/db/users.ts";
+import { db } from "../../src/db/index.ts";
+import { users } from "../../src/db/schema.ts";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -34,6 +37,36 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "User profile not found in database." });
     }
     res.json(user);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update the current authenticated user's profile info (name, avatar)
+router.put("/profile", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { uid } = req.user!;
+    const { name, avatar } = req.body;
+
+    const updateData: Partial<{ name: string; avatar: string }> = {};
+    if (name) updateData.name = name;
+    if (avatar) updateData.avatar = avatar;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: "Nothing to update" });
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.uid, uid))
+      .returning();
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User profile not found in database." });
+    }
+
+    res.json({ message: "Profile updated successfully", user: updatedUser });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
