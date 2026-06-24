@@ -1,0 +1,6 @@
+{
+  "name": "Community Hero",
+  "description": "A modern, mobile-first civic engagement platform that empowers citizens to report, verify, and help resolve community issues.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
