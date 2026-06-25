@@ -768,6 +768,7 @@ export default function App() {
             }}
             selectedIssueId={selectedIssue?.id || null}
             cartoonFilterClass={activeTheme.mapFilter}
+            isReporting={!!reportingCoords}
           />
         </main>
 

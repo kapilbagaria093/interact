@@ -13,6 +13,7 @@ interface InteractiveMapProps {
   onMapClick: (lat: number, lng: number, address: string) => void;
   selectedIssueId: string | null;
   cartoonFilterClass?: string;
+  isReporting?: boolean;
 }
 
 export default function InteractiveMap({
@@ -21,6 +22,7 @@ export default function InteractiveMap({
   onMapClick,
   selectedIssueId,
   cartoonFilterClass = 'saturate-[2.0] contrast-[1.25]',
+  isReporting,
 }: InteractiveMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -37,6 +39,18 @@ export default function InteractiveMap({
   useEffect(() => {
     onSelectIssueRef.current = onSelectIssue;
   }, [onSelectIssue]);
+
+  // Handle removal of click marker if reporting ceases / gets cancelled
+  useEffect(() => {
+    if (!isReporting && clickMarkerRef.current) {
+      try {
+        clickMarkerRef.current.remove();
+      } catch (err) {
+        console.warn('Failed to remove click marker on report cancel:', err);
+      }
+      clickMarkerRef.current = null;
+    }
+  }, [isReporting]);
 
   // Initialize Map
   useEffect(() => {
