@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signInWithPopup, 
-  updateProfile 
-} from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase.ts';
+import { supabase } from '../lib/supabase.ts';
 import { Sparkles, Mail, Lock, User as UserIcon, LogIn, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -49,38 +43,54 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         if (!name.trim()) {
           throw new Error('Please enter your full name');
         }
-        // Sign up
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
 
-        // Set Firebase display name & photo URL
-        await updateProfile(user, {
-          displayName: name,
-          photoURL: selectedAvatar
+        // Sign up with Supabase
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+              avatar_url: selectedAvatar
+            }
+          }
         });
 
-        // Sync with backend database
-        const token = await user.getIdToken();
-        const syncRes = await fetch('/api/auth/sync', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ name, avatar: selectedAvatar })
-        });
+        if (signUpError) throw signUpError;
+        if (!data.user) throw new Error('Could not create account');
 
-        if (!syncRes.ok) {
-          throw new Error('Successfully created account, but profile synchronization failed. Please refresh.');
+        const token = data.session?.access_token;
+        if (token) {
+          // Sync with backend database
+          const syncRes = await fetch('/api/auth/sync', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ name, avatar: selectedAvatar })
+          });
+
+          if (!syncRes.ok) {
+            throw new Error('Successfully created account, but profile synchronization failed. Please refresh.');
+          }
+
+          onAuthSuccess(token);
+        } else {
+          // If Supabase has email confirmation enabled, session won't be ready immediately
+          setError('Profile created! Please check your email inbox to confirm your registration.');
         }
-
-        onAuthSuccess(token);
       } else {
-        // Log in
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-        
-        const token = await user.getIdToken();
+        // Log in with Supabase
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (signInError) throw signInError;
+        const token = data.session?.access_token;
+        if (!token) throw new Error('Failed to retrieve authentication session.');
+
         // Trigger profile sync to guarantee profile exists in database
         await fetch('/api/auth/sync', {
           method: 'POST',
@@ -96,14 +106,11 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     } catch (err: any) {
       console.error(err);
       let errMsg = err.message || 'Authentication failed. Please check your details.';
-      if (err.code === 'auth/email-already-in-use') {
+      // Map standard Supabase error messages to human-friendly ones
+      if (err.message?.includes('User already registered') || err.status === 422) {
         errMsg = 'This email is already registered.';
-      } else if (err.code === 'auth/invalid-credential') {
+      } else if (err.message?.includes('Invalid login credentials')) {
         errMsg = 'Incorrect email or password.';
-      } else if (err.code === 'auth/weak-password') {
-        errMsg = 'Password should be at least 6 characters.';
-      } else if (err.code === 'auth/operation-not-allowed') {
-        errMsg = 'Email/Password authentication is not enabled. Go to your Firebase Console > Authentication > Sign-in method, and click "Enable" on Email/Password.';
       }
       setError(errMsg);
     } finally {
@@ -115,38 +122,17 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
     setLoading(true);
     setError(null);
     try {
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      const user = result.user;
-
-      const token = await user.getIdToken();
-      // Sync on Postgres backend
-      const syncRes = await fetch('/api/auth/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          name: user.displayName || user.email?.split('@')[0],
-          avatar: user.photoURL || PRESET_AVATARS[0]
-        })
+      const { error: oAuthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
       });
 
-      if (!syncRes.ok) {
-        throw new Error('Successfully logged in with Google, but profile synchronization failed.');
-      }
-
-      onAuthSuccess(token);
+      if (oAuthError) throw oAuthError;
     } catch (err: any) {
       console.error(err);
-      if (err.code !== 'auth/popup-closed-by-user') {
-        let errMsg = err.message || 'Google authentication failed.';
-        if (err.code === 'auth/operation-not-allowed') {
-          errMsg = 'Google authentication is not enabled. Go to your Firebase Console > Authentication > Sign-in method, and click "Add new provider" > "Google" to enable it.';
-        }
-        setError(errMsg);
-      }
-    } finally {
+      setError(err.message || 'Google authorization failed.');
       setLoading(false);
     }
   };
@@ -233,7 +219,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           {/* Avatar selector on Sign Up */}
           {isSignUp && (
             <div className="space-y-2 pt-1">
-              <label className="text-[10px] font-black uppercase tracking-wider text-black block">Choose Your Avatar Avatar</label>
+              <label className="text-[10px] font-black uppercase tracking-wider text-black block">Choose Your Avatar</label>
               <div className="flex items-center gap-2 justify-between">
                 <img 
                   src={selectedAvatar} 

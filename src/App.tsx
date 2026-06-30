@@ -22,8 +22,7 @@ import {
   Target
 } from 'lucide-react';
 
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './lib/firebase.ts';
+import { supabase } from './lib/supabase.ts';
 import AuthScreen from './components/AuthScreen.tsx';
 
 import { Issue, User, IssueCategory, IssueSeverity, IssueStatus } from './types';
@@ -134,16 +133,12 @@ export default function App() {
 
   // Auth Observer
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setAuthLoading(true);
-      if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          setToken(idToken);
-        } catch (err) {
-          console.error('Error fetching Firebase ID token:', err);
-          setToken(null);
-        }
+    setAuthLoading(true);
+    
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setToken(session.access_token);
       } else {
         setToken(null);
         setCurrentUser(null);
@@ -151,7 +146,18 @@ export default function App() {
       }
     });
 
-    return () => unsubscribe();
+    // Listen to changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        setToken(session.access_token);
+      } else {
+        setToken(null);
+        setCurrentUser(null);
+        setAuthLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Load Data
@@ -200,7 +206,7 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       showNotification('Successfully logged out of Civic Ledger.');
     } catch (err) {
       console.error(err);
