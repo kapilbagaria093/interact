@@ -1,9 +1,94 @@
 import { db } from "./index.ts";
 import { users, issues, verifications } from "./schema.ts";
-import { count } from "drizzle-orm";
+import { count, sql } from "drizzle-orm";
 
 export async function seedDatabase() {
   try {
+    console.log("Ensuring database tables exist...");
+    
+    // Ensure all tables exist with correct relations and constraints
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "users" (
+        "id" SERIAL PRIMARY KEY,
+        "uid" TEXT NOT NULL UNIQUE,
+        "email" TEXT NOT NULL UNIQUE,
+        "name" TEXT,
+        "avatar" TEXT,
+        "points" INTEGER DEFAULT 0 NOT NULL,
+        "level" INTEGER DEFAULT 1 NOT NULL,
+        "impact_score" INTEGER DEFAULT 0 NOT NULL,
+        "reported_count" INTEGER DEFAULT 0 NOT NULL,
+        "verified_count" INTEGER DEFAULT 0 NOT NULL,
+        "resolved_count" INTEGER DEFAULT 0 NOT NULL,
+        "funding_total" INTEGER DEFAULT 0 NOT NULL,
+        "joined_at" TIMESTAMP DEFAULT NOW() NOT NULL,
+        "contributions" JSONB DEFAULT '{}' NOT NULL
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "issues" (
+        "id" SERIAL PRIMARY KEY,
+        "category" TEXT NOT NULL,
+        "severity" TEXT NOT NULL,
+        "summary" TEXT NOT NULL,
+        "description" TEXT NOT NULL,
+        "before_image" TEXT NOT NULL,
+        "after_image" TEXT,
+        "after_description" TEXT,
+        "latitude" DOUBLE PRECISION NOT NULL,
+        "longitude" DOUBLE PRECISION NOT NULL,
+        "location_name" TEXT NOT NULL,
+        "status" TEXT DEFAULT 'Reported' NOT NULL,
+        "reporter_id" TEXT NOT NULL REFERENCES "users" ("uid") ON DELETE CASCADE,
+        "reporter_name" TEXT NOT NULL,
+        "reporter_avatar" TEXT NOT NULL,
+        "verification_count" INTEGER DEFAULT 0 NOT NULL,
+        "trust_score" INTEGER DEFAULT 50 NOT NULL,
+        "priority_score" INTEGER DEFAULT 0 NOT NULL,
+        "created_at" TIMESTAMP DEFAULT NOW() NOT NULL,
+        "resolved_at" TIMESTAMP,
+        "resolver_id" TEXT REFERENCES "users" ("uid") ON DELETE SET NULL,
+        "resolver_name" TEXT,
+        "funding_goal" INTEGER DEFAULT 0 NOT NULL,
+        "funding_current" INTEGER DEFAULT 0 NOT NULL,
+        "volunteer_count" INTEGER DEFAULT 0 NOT NULL
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "verifications" (
+        "id" SERIAL PRIMARY KEY,
+        "issue_id" INTEGER NOT NULL REFERENCES "issues" ("id") ON DELETE CASCADE,
+        "user_id" TEXT NOT NULL REFERENCES "users" ("uid") ON DELETE CASCADE,
+        "user_name" TEXT NOT NULL,
+        "type" TEXT NOT NULL,
+        "timestamp" TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "user_missions" (
+        "id" SERIAL PRIMARY KEY,
+        "user_id" TEXT NOT NULL REFERENCES "users" ("uid") ON DELETE CASCADE,
+        "mission_id" TEXT NOT NULL,
+        "status" TEXT NOT NULL,
+        "created_at" TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "user_fundings" (
+        "id" SERIAL PRIMARY KEY,
+        "user_id" TEXT NOT NULL REFERENCES "users" ("uid") ON DELETE CASCADE,
+        "issue_id" INTEGER NOT NULL REFERENCES "issues" ("id") ON DELETE CASCADE,
+        "amount" INTEGER NOT NULL,
+        "created_at" TIMESTAMP DEFAULT NOW() NOT NULL
+      );
+    `);
+
+    console.log("Database tables verified/created successfully.");
+
     // Check if users already exist
     const usersCountRes = await db.select({ val: count() }).from(users);
     const usersCount = usersCountRes[0]?.val || 0;
