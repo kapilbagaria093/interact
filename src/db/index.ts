@@ -6,12 +6,23 @@ const { Pool } = pg;
 
 // Function to create a new connection pool.
 export const createPool = () => {
+  const connectionString = process.env.DATABASE_URL;
+  if (connectionString) {
+    return new Pool({
+      connectionString,
+      ssl: connectionString.includes("neon.tech") || process.env.SQL_SSL === "true" ? { rejectUnauthorized: false } : undefined,
+      connectionTimeoutMillis: 15000,
+    });
+  }
+
+  const useSsl = process.env.SQL_SSL === "true";
   return new Pool({
     host: process.env.SQL_HOST,
     user: process.env.SQL_USER,
     password: process.env.SQL_PASSWORD,
     database: process.env.SQL_DB_NAME,
     connectionTimeoutMillis: 15000,
+    ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   });
 };
 
