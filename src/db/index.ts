@@ -14,7 +14,7 @@ export const createPool = () => {
   if (connectionString) {
     return new Pool({
       connectionString,
-      ssl: connectionString.includes("neon.tech") || process.env.SQL_SSL === "true" ? { rejectUnauthorized: false } : undefined,
+      ssl: connectionString.includes("neon.tech") || connectionString.includes("supabase") || process.env.SQL_SSL === "true" ? { rejectUnauthorized: false } : undefined,
       connectionTimeoutMillis: 15000,
     });
   }

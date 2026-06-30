@@ -11,9 +11,6 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Register all API routes
-registerRoutes(app);
-
 // Seed Postgres database on-demand if needed
 let seeded = false;
 app.use(async (req, res, next) => {
@@ -27,6 +24,9 @@ app.use(async (req, res, next) => {
   }
   next();
 });
+
+// Register all API routes
+registerRoutes(app);
 
 // Export default for Vercel Serverless runtime
 export default app;
